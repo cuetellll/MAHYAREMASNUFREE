@@ -1,0 +1,7 @@
+# MahyarFree runtime dependencies
+#
+# The proxy cores (sing-box / Xray-core) are native executables, not pip
+# packages; tools/fetch_cores.py downloads them into mahyarfree/bin/.
+
+pywebview>=5.1
+pythonnet>=3.0.3 ; sys_platform == "win32"
