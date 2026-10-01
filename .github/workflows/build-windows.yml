@@ -1,0 +1,65 @@
+name: Build MahyarFree for Windows
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pillow
+
+      - name: Generate icon
+        run: python tools/make_icon.py
+
+      - name: Download proxy cores
+        run: python tools/fetch_cores.py
+        continue-on-error: true
+
+      - name: Run tests
+        run: python tools/smoke_test.py
+        continue-on-error: true
+
+      - name: Build with PyInstaller
+        run: pyinstaller build/mahyarfree.spec --noconfirm --clean
+
+      - name: Package the build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/MahyarFree/* -DestinationPath MahyarFree-Windows.zip -Force
+          Get-Item MahyarFree-Windows.zip | Select-Object Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MahyarFree-Windows
+          path: MahyarFree-Windows.zip
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MahyarFree-Windows.zip
+          generate_release_notes: true
