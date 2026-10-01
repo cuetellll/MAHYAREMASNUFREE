@@ -69,11 +69,12 @@ class Engine:
 
     # ------------------------------------------------------------- commands
     def _choose_core(self, spec: Dict[str, Any], preferred: str = "auto") -> str:
-        if preferred in ("sing-box", "xray") and cores.core_path(preferred):
-            if preferred == "xray":
+        if preferred == "xray" and cores.core_path("xray"):
+            xray_protocols = {"vless", "vmess", "trojan", "shadowsocks", "shadowsocksr", "socks", "http"}
+            if spec.get("protocol") in xray_protocols:
                 return "xray"
-            if sniff_core(spec) == "sing-box":
-                return "sing-box"
+        if preferred == "sing-box" and cores.core_path("sing-box") and sniff_core(spec) == "sing-box":
+            return "sing-box"
         return sniff_core(spec)
 
     def start(self, specs: List[Dict[str, Any]], active_id: str, settings: Dict[str, Any]) -> Dict[str, Any]:

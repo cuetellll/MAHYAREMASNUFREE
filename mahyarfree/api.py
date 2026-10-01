@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .core import cores, engine, latency, nodes_store, paths, stats, sysproxy
+from .core import cores, engine, latency, nodes_store, paths, probe, stats, sysproxy
 from .core.settings import get_settings
 from .version import __version__
 
@@ -121,9 +121,32 @@ class Api:
             try:
                 self._emit("connecting", {"node_id": target, "node_name": node.get("name", "")})
                 state = self.engine.start(specs, target, self.settings.all())
+                verified_latency: Optional[int] = None
+                if self.settings.get("routing") != "direct":
+                    for attempt in range(3):
+                        time.sleep(0.7 if attempt == 0 else 0.45)
+                        verified_latency = probe.http_proxy_probe(
+                            int(self.settings.get("http_port", 20809)),
+                            timeout=min(12.0, max(8.0, float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0)),
+                        )
+                        if verified_latency is not None:
+                            break
+                    if verified_latency is None:
+                        self.engine.stop()
+                        self.store.set_latency(target, None)
+                        self.store.save_cache()
+                        message = "هسته اجرا شد، اما تست واقعی عبور اینترنت ناموفق بود؛ این کانفیگ را سالم اعلام نکردیم. سرور یا پروتکل دیگری را امتحان کنید."
+                        self._emit("error", {"message": message, "node_id": target})
+                        return {"ok": False, "verified": False, "error": message}
+                    self.store.set_latency(target, verified_latency)
+                    self.store.save_cache()
+                    self._emit("ping-result", {"id": target, "latency": verified_latency,
+                                                "quality": latency.quality_of(verified_latency),
+                                                "method": "http-proxy", "verified": True})
                 self.settings.set("selected_node_id", target, save=False)
                 self.settings.save()
-                return {"ok": True, **state}
+                return {"ok": True, **state, "verified": verified_latency is not None,
+                        "latency": verified_latency}
             except engine.EngineError as error:
                 message = str(error)
                 self._emit("error", {"message": message})
@@ -136,18 +159,21 @@ class Api:
         specs = self.store.all()
         if not specs:
             return {"ok": False, "error": "no-nodes"}
+        if self.settings.get("routing") == "direct":
+            return {"ok": False, "error": "حالت مسیریابی روی «مستقیم» است؛ ابتدا «هوشمند» یا «همه از VPN» را انتخاب کنید."}
         self.ping_all(wait=True)
 
-        # cheapest first, unreachable nodes last
+        # Only configurations which actually carried a test request are candidates.
         ordered = sorted(
-            specs,
-            key=lambda s: (self.store.latency.get(s["id"]) is None,
-                           self.store.latency.get(s["id"]) or 99999),
+            (s for s in specs if self.store.latency.get(s["id"]) is not None),
+            key=lambda s: int(self.store.latency.get(s["id"]) or 99999),
         )
+        if not ordered:
+            return {"ok": False, "verified": False,
+                    "error": "هیچ کانفیگی نتوانست درخواست آزمایشی را از تونل عبور دهد."}
 
         last: Dict[str, Any] = {"ok": False, "error": "no-reachable"}
-        fallback: Optional[Dict[str, Any]] = None
-        candidates = ordered[:4]
+        candidates = ordered[:8]
 
         for index, node in enumerate(candidates):
             self._emit("best-progress", {
@@ -159,32 +185,8 @@ class Api:
             if not result.get("ok"):
                 last = result
                 continue
-
-            # a low TCP handshake means nothing if the node cannot carry data
-            probe = self._verify_node(node["id"])
-            if probe is not None:
-                return {**result, "verified": True, "latency": probe}
-
-            fallback = node
-            self.engine.stop()
-            time.sleep(0.3)
-
-        # nothing answered the probe: stay on the fastest node we did reach
-        if fallback is not None:
-            result = self.connect(fallback["id"])
-            if result.get("ok"):
-                return {**result, "verified": False}
+            return result
         return last
-
-    def _verify_node(self, node_id: str, attempts: int = 2, timeout_ms: int = 6000) -> Optional[int]:
-        """Probe a freshly started node until it proves it can carry traffic."""
-        port = int(self.settings.get("clash_port", 20810))
-        for attempt in range(attempts):
-            time.sleep(1.8 if attempt == 0 else 0.8)
-            value = latency.clash_delay(port, "proxy", timeout_ms=timeout_ms)
-            if value is not None:
-                return value
-        return None
 
     def disconnect(self) -> Dict[str, Any]:
         with self._busy:
@@ -197,7 +199,7 @@ class Api:
     # -------------------------------------------------------------- latency
     def ping_all(self, wait: bool = True) -> Dict[str, Any]:
         specs = self.store.all()
-        timeout = float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0
+        timeout = min(12.0, max(8.0, float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0))
 
         def run() -> None:
             self._emit("ping-start", {"count": len(specs)})
@@ -205,11 +207,18 @@ class Api:
             def on_result(node_id: str, value: Optional[int]) -> None:
                 self.store.set_latency(node_id, value)
                 self._emit("ping-result", {"id": node_id, "latency": value,
-                                           "quality": latency.quality_of(value)})
+                                           "quality": latency.quality_of(value),
+                                           "method": "http-proxy", "verified": value is not None})
 
-            latency.test_nodes(specs, timeout=timeout, on_result=on_result)
+            results = probe.test_nodes(specs, self.settings.all(), timeout=timeout,
+                                       workers=3, on_result=on_result)
             self.store.save_cache()
-            self._emit("ping-done", {"latencies": self.store.latency})
+            self._emit("ping-done", {
+                "latencies": results,
+                "success": sum(value is not None for value in results.values()),
+                "failed": sum(value is None for value in results.values()),
+                "method": "http-proxy",
+            })
 
         if wait:
             run()
@@ -221,21 +230,28 @@ class Api:
         node = self.store.by_id(node_id)
         if node is None:
             return {"ok": False}
-        timeout = float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0
-        value = latency.tcp_ping_best(node["server"], int(node["port"]), timeout)
+        timeout = min(12.0, max(8.0, float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0))
+        value = probe.probe_node(node, self.settings.all(), timeout=timeout)
         self.store.set_latency(node_id, value)
+        self.store.save_cache()
         self._emit("ping-result", {"id": node_id, "latency": value, "quality": latency.quality_of(value)})
-        return {"ok": True, "latency": value}
+        return {"ok": value is not None, "latency": value, "verified": value is not None}
 
     def real_delay(self, node_id: str = "") -> Dict[str, Any]:
         """Round-trip delay measured through the running core."""
         if not self.engine.running:
             return {"ok": False, "error": "not-running"}
-        node = self.store.by_id(node_id or self.settings.get("selected_node_id", ""))
-        tag = "proxy" if not node_id or node_id == self.settings.get("selected_node_id") else f"node::{node_id}"
-        value = latency.clash_delay(int(self.settings.get("clash_port", 20810)), tag,
-                                    timeout_ms=int(self.settings.get("latency_timeout_ms", 2500)))
-        return {"ok": value is not None, "latency": value}
+        current = self.engine.status().get("node_id", "")
+        if node_id and node_id != current:
+            return {"ok": False, "error": "requested-node-is-not-connected"}
+        value = probe.http_proxy_probe(
+            int(self.settings.get("http_port", 20809)),
+            timeout=min(12.0, max(8.0, float(self.settings.get("latency_timeout_ms", 2500)) / 1000.0)),
+        )
+        if current:
+            self.store.set_latency(current, value)
+            self.store.save_cache()
+        return {"ok": value is not None, "latency": value, "verified": value is not None}
 
     # --------------------------------------------------------- subscriptions
     def refresh(self, wait: bool = True) -> Dict[str, Any]:

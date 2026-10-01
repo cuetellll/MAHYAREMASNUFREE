@@ -314,7 +314,7 @@
     if (State.pinging) return;
     State.pinging = true;
     $("radar").classList.add("is-on");
-    toast("تست پینگ همهٔ سرورها آغاز شد", "info", 2000);
+    toast("آزمون واقعی عبور اینترنت از همهٔ سرورها آغاز شد", "info", 2600);
     await Bridge.call("ping_all");
   }
 
@@ -625,15 +625,21 @@
         if (label) {
           label.dataset.q = quality;
           label.textContent = info.latency === null || info.latency === undefined ? "—" : info.latency + " ms";
+          label.title = info.latency === null || info.latency === undefined
+            ? "تست واقعی از این کانفیگ عبور نکرد"
+            : "زمان پاسخ HTTP(S) واقعی از طریق تونل VPN";
         }
       }
     });
 
-    Bridge.on("ping-done", () => {
+    Bridge.on("ping-done", (info) => {
       State.pinging = false;
       $("radar").classList.remove("is-on");
       if (State.sort === "latency") renderServers();
-      toast("تست پینگ پایان یافت", "ok", 2200);
+      const good = Number(info && info.success) || 0;
+      const failed = Number(info && info.failed) || 0;
+      const kind = failed && !good ? "err" : failed ? "warn" : "ok";
+      toast(`آزمون واقعی تمام شد: ${good} سرور سالم، ${failed} ناموفق`, kind, 3600);
     });
 
     Bridge.on("nodes", (nodes) => {

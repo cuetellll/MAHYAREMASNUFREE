@@ -17,7 +17,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/5] Installing build dependencies...
+echo [1/4] Installing build dependencies...
 python -m pip install --upgrade pip >nul
 python -m pip install -r requirements.txt pyinstaller pillow
 if errorlevel 1 (
@@ -26,10 +26,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/5] Generating application icon...
+echo [2/4] Generating application icon...
 python tools\make_icon.py
 
-echo [3/5] Downloading proxy cores (sing-box + Xray)...
+echo [3/4] Downloading proxy cores (sing-box + Xray)...
 python tools\fetch_cores.py
 if errorlevel 1 (
     echo [!] Core download failed - the app will fetch them on first run instead.

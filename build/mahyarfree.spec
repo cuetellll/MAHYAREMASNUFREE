@@ -78,6 +78,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="MahyarFree",
+    contents_directory="_internal",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

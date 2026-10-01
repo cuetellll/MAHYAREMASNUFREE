@@ -38,7 +38,7 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="mf-smoke-"))
     os.environ["MAHYARFREE_DATA_DIR"] = str(tmp)
 
-    from mahyarfree.core import configgen_singbox, configgen_xray, cores, latency, paths, sysproxy, uri_parser
+    from mahyarfree.core import configgen_singbox, configgen_xray, cores, latency, paths, probe, sysproxy, uri_parser
     from mahyarfree.core import nodes_store, stats
     from mahyarfree.core.engine import Engine, EngineError
     from mahyarfree.core.settings import Settings
@@ -204,6 +204,9 @@ def main() -> int:
             check("traffic really flows through the tunnel", bool(egress) and "error" not in str(egress),
                   str(egress))
             print(f"         egress ip = {egress}")
+            real_ms = probe.http_proxy_probe(21809, timeout=8.0)
+            check("real HTTP(S) response through the VPN proxy", real_ms is not None,
+                  f"response_time={real_ms}ms")
 
             engine.stop()
             time.sleep(0.6)

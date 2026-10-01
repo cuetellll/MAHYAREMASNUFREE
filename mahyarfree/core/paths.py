@@ -18,6 +18,10 @@ def _base_data_dir() -> Path:
     if override:
         return Path(override).expanduser()
     if sys.platform.startswith("win"):
+        if getattr(sys, "frozen", False):
+            app_dir = Path(sys.executable).resolve().parent
+            if (app_dir / "portable.flag").is_file():
+                return app_dir / "data"
         root = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
         if root:
             return Path(root) / APP_DIR_NAME

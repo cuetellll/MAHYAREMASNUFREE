@@ -49,6 +49,7 @@ class NodeStore:
         self._lock = threading.RLock()
         self.nodes: List[Dict[str, Any]] = []
         self.latency: Dict[str, Optional[int]] = {}
+        self.latency_method = "http-proxy-v1"
         self.favourites: set[str] = set()
         self.last_update = 0.0
         self.errors: Dict[str, str] = {}
@@ -62,7 +63,12 @@ class NodeStore:
                 self.nodes = data.get("nodes", [])
                 self.favourites = set(data.get("favourites", []))
                 self.last_update = float(data.get("last_update") or 0)
-                self.latency = {k: v for k, v in (data.get("latency") or {}).items()}
+                if data.get("latency_method") == self.latency_method:
+                    self.latency = {k: v for k, v in (data.get("latency") or {}).items()}
+                else:
+                    # Older releases showed a raw TCP connect time as if it were
+                    # a VPN ping. Clear it so the UI waits for a real proxy probe.
+                    self.latency = {}
         except Exception:
             self.nodes = []
 
@@ -74,6 +80,7 @@ class NodeStore:
                 "favourites": sorted(self.favourites),
                 "last_update": self.last_update,
                 "latency": self.latency,
+                "latency_method": self.latency_method,
             }, ensure_ascii=False, indent=1), encoding="utf-8")
         except Exception:
             pass
