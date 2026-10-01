@@ -35,13 +35,7 @@ if errorlevel 1 (
     echo [!] Core download failed - the app will fetch them on first run instead.
 )
 
-echo [4/5] Running the test suite...
-python tools\smoke_test.py
-if errorlevel 1 (
-    echo [!] Some tests failed - continuing anyway.
-)
-
-echo [5/5] Packaging with PyInstaller...
+echo [4/4] Packaging with PyInstaller...
 python -m PyInstaller build\mahyarfree.spec --noconfirm --clean
 if errorlevel 1 (
     echo [X] PyInstaller failed

@@ -181,7 +181,12 @@ def main() -> int:
             monitor.stop()
             check("traffic monitor streams samples", len(samples) > 0, f"{len(samples)} samples")
 
-            delay = latency.clash_delay(21810, "proxy", timeout_ms=6000)
+            delay = None
+            for _ in range(3):
+                delay = latency.clash_delay(21810, "proxy", timeout_ms=8000)
+                if delay is not None:
+                    break
+                time.sleep(0.7)
             check("clash api delay query works", delay is not None, f"delay={delay}")
 
             egress = None

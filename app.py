@@ -166,5 +166,43 @@ def _run_in_browser(args) -> int:
             pass
 
 
+def _report_startup_error(error: BaseException) -> None:
+    """Leave a useful log and visible message for a double-click launch failure."""
+    import traceback
+
+    details = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    log_path = Path(os.environ.get("APPDATA", Path.home())) / "MahyarFree" / "logs" / "startup.log"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write("\n--- MahyarFree startup failure ---\n")
+            log.write(details)
+    except Exception:
+        log_path = Path("startup.log")
+        try:
+            log_path.write_text(details, encoding="utf-8")
+        except Exception:
+            pass
+
+    message = f"MahyarFree could not start.\n\n{error}\n\nLog: {log_path}"
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.MessageBoxW(None, message, "MahyarFree — خطای اجرا", 0x10)
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
+    print(details, file=sys.stderr)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        raise SystemExit(130)
+    except SystemExit:
+        raise
+    except BaseException as error:
+        _report_startup_error(error)
+        raise SystemExit(1)
+    raise SystemExit(exit_code)

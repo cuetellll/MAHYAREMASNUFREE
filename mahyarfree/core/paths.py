@@ -52,7 +52,9 @@ def resource_dir() -> Path:
 def bundled_core_dir() -> Path:
     """Where pre-bundled core binaries live inside the package/dist."""
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "core"
+        # PyInstaller onedir (v6+) stores collected binaries under _MEIPASS,
+        # usually the app's _internal directory, not beside the launcher exe.
+        return resource_dir() / "core"
     return resource_dir() / "bin"
 
 

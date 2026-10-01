@@ -19,10 +19,11 @@ PACKAGE = ROOT / "mahyarfree"
 BIN_DIR = PACKAGE / "bin"
 
 datas = [
-    (str(PACKAGE / "ui"), "mahyarfree/ui"),
+    # paths.ui_dir() resolves to _MEIPASS / "ui" in a frozen build
+    (str(PACKAGE / "ui"), "ui"),
 ]
 
-# ship the cores next to the executable so paths.bundled_core_dir() finds them
+# place cores in the runtime resource directory; paths.bundled_core_dir() matches it
 binaries = []
 if BIN_DIR.exists():
     for name in ("sing-box.exe", "xray.exe"):
